@@ -1,0 +1,71 @@
+#!/usr/bin/env php
+<?php
+
+use Symfony\Component\Process\Process;
+
+require dirname(__DIR__).'/src/.bootstrap.php';
+
+if (!`which configurable-http-proxy`) {
+    echo "Unable to find configurable-http-proxy on your system.\n";
+    echo "You can install it using the following command :\n";
+    echo "\n";
+    echo "\t sudo npm install -g configurable-http-proxy\n";
+    echo "\n";
+    exit(1);
+}
+
+$cmd = ['configurable-http-proxy'];
+
+if (array_key_exists('REMOTELABZ_PROXY_PORT', $_ENV)) {
+    $cmd[] = '--port';
+    $cmd[] = $_ENV['REMOTELABZ_PROXY_PORT'];
+}
+
+if (array_key_exists('REMOTELABZ_PROXY_API_PORT', $_ENV)) {
+    $cmd[] = '--api-port';
+    $cmd[] = $_ENV['REMOTELABZ_PROXY_API_PORT'];
+}
+
+if (array_key_exists('REMOTELABZ_PROXY_LOG_LEVEL', $_ENV)) {
+    $cmd[] = '--log-level';
+    $cmd[] = $_ENV['REMOTELABZ_PROXY_LOG_LEVEL'];
+}
+
+# Check if the WSS must be activated or not
+if (array_key_exists('REMOTELABZ_PROXY_USE_WSS', $_ENV) && ($_ENV['REMOTELABZ_PROXY_USE_WSS']==1)) {
+    echo "WSS activated in .env file\n";
+    if (array_key_exists('REMOTELABZ_PROXY_SSL_KEY', $_ENV)) {
+        $cmd[] = '--ssl-key';
+        $cmd[] = $_ENV['REMOTELABZ_PROXY_SSL_KEY'];
+    }
+    if (array_key_exists('REMOTELABZ_PROXY_SSL_CERT', $_ENV)) {
+        $cmd[] = '--ssl-cert';
+        $cmd[] = $_ENV['REMOTELABZ_PROXY_SSL_CERT'];
+    }
+    if (array_key_exists('REMOTELABZ_PROXY_SSL_CERT_SELFSIGNED', $_ENV)) {
+        $cmd[] = '--insecure';
+        $cmd[] = $_ENV['REMOTELABZ_PROXY_SSL_CERT_SELFSIGNED'];
+    }
+} else {
+    echo "WSS didn't activate in .env file\n";
+}
+
+$cmd[] = '--proxy-timeout';
+if (array_key_exists('REMOTELABZ_PROXY_TIMEOUT', $_ENV)) {
+    $cmd[] = $_ENV['REMOTELABZ_PROXY_TIMEOUT'];
+} else {
+    $cmd[] = 86400000;
+}
+
+$cmd[] = '--ip';
+$cmd[] = '0.0.0.0';
+
+$cmd[] = '--api-ip';
+$cmd[] = '0.0.0.0';
+
+$process = new Process($cmd);
+$process->setTimeout(null);
+
+$process->run(function ($type, $buffer) {
+    echo $buffer;
+});

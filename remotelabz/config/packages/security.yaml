@@ -1,0 +1,107 @@
+parameters:
+    enable_shibboleth: '%env(ENABLE_SHIBBOLETH)%'
+security:
+    password_hashers:
+        App\Entity\User:
+            algorithm: 'sodium'
+        App\Entity\InvitationCode:
+            algorithm: 'plaintext'
+
+    # https://symfony.com/doc/current/security.html#where-do-users-come-from-user-providers
+    providers:
+        # used to reload user from session & other features (e.g. switch_user)
+        app:
+            entity:
+                class: App\Entity\User
+                property: email
+
+        invited_users:
+            entity:
+                class: App\Entity\InvitationCode
+                property: code
+
+        all_users:
+            chain:
+                providers: ['invited_users', 'app']
+
+    role_hierarchy:
+        ROLE_TEACHER: [ROLE_USER]
+        ROLE_TEACHER_EDITOR: [ROLE_TEACHER]
+        ROLE_ADMINISTRATOR: [ROLE_TEACHER_EDITOR]
+        ROLE_SUPER_ADMINISTRATOR: [ROLE_ADMINISTRATOR]
+
+    firewalls:
+        auth:
+            pattern:  ^/api/auth
+            stateless: true
+            provider: all_users
+            json_login:
+                check_path:               /api/auth
+                success_handler:          App\Security\AuthenticationSuccessHandler
+                failure_handler:          lexik_jwt_authentication.handler.authentication_failure
+
+        refresh:
+            pattern:  ^/api/auth/refresh
+            stateless: true
+
+        api_doc:
+            pattern:   ^/api/doc
+            security: false
+
+        api:
+            pattern:   ^/api
+            stateless: true
+            provider: all_users
+            jwt: ~
+
+        dev:
+            pattern: ^/(_(profiler|wdt)|css|images|js)/
+            security: false
+
+        profile_picture:
+            pattern: ^/users/\d+/picture
+            security: false
+
+        default:
+            provider: all_users
+            custom_authenticators:
+                - App\Security\LoginFormAuthenticator
+                - App\Security\ShibbolethAuthenticator
+                - App\Security\CodeLoginAuthenticator
+            entry_point: App\Security\LoginFormAuthenticator
+
+            logout:
+                path: /logout
+
+            switch_user: {role: ROLE_SUPER_ADMINISTRATOR, provider: app}
+            
+            access_denied_handler: App\Security\AccessDeniedHandler
+            # activate different ways to authenticate
+
+            # http_basic: true
+            # https://symfony.com/doc/current/security.html#a-configuring-how-your-users-will-authenticate
+
+            # form_login: true
+            # https://symfony.com/doc/current/security/form_login_setup.html
+
+    # Easy way to control access for large sections of your site
+    # Note: Only the *first* access control that matches will be used
+    access_control:
+        - { path: ^/login, roles: PUBLIC_ACCESS }
+        - { path: ^/password, roles: PUBLIC_ACCESS }
+        - { path: ^/api/auth, roles: PUBLIC_ACCESS }
+        - { path: ^/profile/vpn, roles: ['ROLE_USER', 'ROLE_GUEST'] }
+        - { path: ^/api, roles: PUBLIC_ACCESS, ips: [127.0.0.1, '%env(IP_ADDRESS)%'] }
+        - { path: ^/api, roles: IS_AUTHENTICATED_FULLY }
+        - { path: ^/labs/guest/[1-9]*, roles: ['ROLE_GUEST'] }
+        - { path: ^/labs/[1-9]*, roles: ['ROLE_USER'] }
+        - { path: ^/labs, roles: ['ROLE_TEACHER'] }
+        - { path: '^/instances/[0-9a-fA-F]{8}[-][0-9a-fA-F]{4}[-][0-9a-fA-F]{4}[-][0-9a-fA-F]{4}[-][0-9a-fA-F]{12}/view/(vnc|login|serial)', roles: ['ROLE_USER', 'ROLE_GUEST'] }
+        - { path: ^/activities, roles: ['ROLE_USER'] }
+        - { path: ^/admin/labs, roles: ['ROLE_TEACHER'] }
+        - { path: ^/admin/sandbox, roles: ['ROLE_TEACHER'] }
+        - { path: ^/admin/resources, roles: ['ROLE_TEACHER'] }
+        - { path: ^/admin/devices, roles: ['ROLE_TEACHER_EDITOR'] }
+        - { path: ^/admin/operating-systems, roles: ['ROLE_TEACHER_EDITOR'] }
+        - { path: ^/admin, roles: ['ROLE_ADMINISTRATOR'] }
+        - { path: ^/, roles: ['ROLE_USER'] }

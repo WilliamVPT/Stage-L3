@@ -1,0 +1,14 @@
+[Unit]
+Description=Remotelabz Worker Service
+After=network.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+ExecStartPre=/usr/bin/env php /opt/remotelabz-worker/bin/remotelabz-network-up
+ExecStart=/usr/bin/env php /opt/remotelabz-worker/bin/console messenger:consume worker
+ExecStop=/usr/bin/env php /opt/remotelabz-worker/bin/console messenger:stop-workers
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,90 @@
+{% extends 'dashboard.base.html.twig' %}
+
+{% block breadcrumbs %}
+    {%- set breadcrumbs = breadcrumbs|merge({ 'Devices': is_granted("ROLE_ADMINISTRATOR") ? path('devices') : null }) -%}
+    {{ parent() }}
+{% endblock %}
+
+{% block sidebar %}
+    {% set category = 'devices' %}
+    {{ parent() }}
+{% endblock %}
+
+{% block wrapper %}
+    <div class="content-title">
+        <div class="content-title-infos">
+            <h1>{{ 'Device Templates'|trans }}</h1>
+        </div>
+        <div class="content-title-actions">
+            <a href="{{ path('new_device') }}" class="btn btn-success">{{ 'New virtual device'|trans }}</a>
+        </div>
+        <div class="content-title-actions ml-2">
+            <a href="{{ path('new_physical_device') }}" class="btn btn-success">{{ 'New physical device'|trans }}</a>
+        </div>
+    </div>
+    <div class="top-panel">
+        <ul class="nav-links nav nav-tabs">
+            {% set type = app.request.query.get('type') %}
+            <li {% if type is null %} class="active"{% endif %}>
+                <a href="{{ path('devices', app.request.query|merge({type: null})) }}">
+                    <span>All</span> <span class="badge badge-pill">{{ count.total }}</span>
+                </a>
+            </li>
+            <li {% if type == 'vm' %}class="active"{% endif %}>
+                <a href="{{ path('devices', app.request.query|merge({type: 'vm'})) }}">
+                    <span>VMs</span> <span class="badge badge-pill">{{ count.vms }}</span>
+                </a>
+            </li>
+            <li {% if type == 'container' %}class="active"{% endif %}>
+                <a href="{{ path('devices', app.request.query|merge({type: 'container'})) }}">
+                    <span>Containers</span> <span class="badge badge-pill">{{ count.containers }}</span>
+                </a>
+            </li>
+            <li {% if type == 'physical' %}class="active"{% endif %}>
+                <a href="{{ path('devices', app.request.query|merge({type: 'physical'})) }}">
+                    <span>Physical Devices</span> <span class="badge badge-pill">{{ count.physical }}</span>
+                </a>
+            </li>
+        </ul>
+    </div>
+    <div class="content-body">
+        <form action="{{ path('devices') }}" method="GET">
+            <div class="row">
+                <div class="col">
+                    <div class="input-group">
+                        <div class="input-group-prepend">
+                            <span class="input-group-text">
+                                <i class="fa fa-search"></i>
+                            </span>
+                        </div>
+                        <input type="search" class="form-control input-sm" name="search"
+                        placeholder="Search by name"
+                        spellcheck="false" value="{{ search|default('') }}">
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+    {% for device in devices %}
+
+
+    <div class="wrapper d-flex align-items-center {% if not loop.last %}border-bottom{% endif %} lab-item">
+        <div class="lab-item-left d-flex flex-column">
+            <div>
+            <a href="{{ path('show_device', {'id': device.id}) }}">
+                {{ device.name }}
+            </a>
+            </div>
+            <div class="lab-item-infos text-muted">
+                (Type: {{ device.type }}; OS: {{ device.operatingsystem.name }})
+            </div>
+        </div>
+</div>
+
+    {% endfor %}
+{% endblock %}
+
+{% block javascripts %}
+    {{ parent() }}
+    {# {{ encore_entry_script_tags('device') }} #}
+{% endblock %}

@@ -1,0 +1,53 @@
+# This file is the entry point to configure your own services.
+# Files in the packages/ subdirectory configure your dependencies.
+
+# Put parameters here that don't need to change on each machine where the app is deployed
+# https://symfony.com/doc/current/best_practices/configuration.html#application-related-configuration
+parameters:
+    app.network.lab.interface: '%env(resolve:ADM_INTERFACE)%'
+    app.network.lab.cidr: '%env(resolve:LAB_NETWORK)%'
+    app.network.data.interface: '%env(resolve:DATA_INTERFACE)%'
+    app.network.data.cidr: '%env(resolve:DATA_NETWORK)%'
+    app.serverssh: '%env(resolve:SERVER_SSH)%'
+    app.pdu.api.login: '%env(resolve:PDU_API_LOGIN)%'
+    app.pdu.api.password: '%env(resolve:PDU_API_PASSWORD)%'
+    app.network.lab.internet_interface: '%env(string:INTERNET_INTERFACE_ACCESS)%'
+    app.data.network.interface.ip: '%env(resolve:DATA_INT_IP_ADDRESS)%'
+    app.data.network.gateway: '%env(resolve:DATA_INT_GW)%'
+    app.services.proxy.wss: '%env(bool:REMOTELABZ_PROXY_USE_WSS)%'
+    app.services.proxy.cert: '%env(string:REMOTELABZ_PROXY_SSL_CERT)%'
+    app.services.proxy.key: '%env(string:REMOTELABZ_PROXY_SSL_KEY)%'
+    app.vpn.interface: '%env(string:VPN_CONCENTRATOR_INTERFACE)%'
+    app.network.front.ip: '%env(string:FRONT_SERVER_IP)%'
+    app.general.contact_mail: '%env(resolve:CONTACT_MAIL)%'
+    app.ssh.worker.user : '%env(string:SSH_USER_WORKER)%'
+    app.ssh.worker.passwd : '%env(string:SSH_USER_PASSWD)%'
+    app.ssh.worker.privatekey : '%env(string:SSH_USER_PRIVATEKEY_FILE)%'
+    app.ssh.worker.publickey : '%env(string:SSH_USER_PUBLICKEY_FILE)%'
+
+services:
+    # default configuration for services in *this* file
+    _defaults:
+        autowire: true      # Automatically injects dependencies in your services.
+        autoconfigure: true # Automatically registers your services as commands, event subscribers, etc.
+
+    # makes classes in src/ available to be used as services
+    # this creates a service per class whose id is the fully-qualified class name
+    App\:
+        resource: '../src/*'
+        exclude: '../src/{DependencyInjection,Entity,Migrations,Tests,Kernel.php}'
+
+    # controllers are imported separately to make sure services can be injected
+    # as action arguments even if you don't extend any base controller class
+    App\Controller\:
+        resource: '../src/Controller'
+        tags: ['controller.service_arguments']
+
+    App\Service\Instance\InstanceManager:
+        arguments:
+            $front_ip: '%app.network.front.ip%'
+            $server_ssh: '%app.serverssh%'
+            $pdu_api_login: '%app.pdu.api.login%'
+            $pdu_api_password: '%app.pdu.api.password%'
+    # add more service definitions when explicit configuration is needed
+    # please note that last definitions always *replace* previous ones

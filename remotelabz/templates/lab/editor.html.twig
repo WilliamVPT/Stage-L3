@@ -1,0 +1,21 @@
+{% extends 'lab/index.html.twig' %}
+
+{% block stylesheets %}
+    {{ parent() }}
+    <link rel="stylesheet" href="https://unpkg.com/easymde/dist/easymde.min.css">
+{% endblock %}
+
+{% block breadcrumbs %}
+    {% set breadcrumbs = app.request.uri ends with 'edit' ? breadcrumbs|merge({ ("!" ~ lab.id): path('show_lab', {'id': lab.id}) }) : breadcrumbs|merge({ 'New': path('new_lab') }) %}
+    {{ parent() }}
+{% endblock %}
+
+{%- set edit = app.request.uri ends with 'edit' -%}
+
+{% block wrapper_xl %}
+    {{- react_component('Editor', {'props': {"id": lab.id}}) -}}
+{% endblock %}
+
+{% block javascripts %}
+    {{ parent() }}
+{% endblock %}

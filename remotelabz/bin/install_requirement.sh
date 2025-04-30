@@ -1,0 +1,256 @@
+#!/bin/bash
+
+apt-get update
+apt-get -y upgrade
+add-apt-repository -y ppa:ondrej/php # PPRI0603 : Ajout pour l'installation de PHP8.1
+apt install -y fail2ban exim4 apache2 curl gnupg zip unzip ntp openvpn libapache2-mod-php8.1 # PPRI0603 : changement de version des modules PHP pour passer en PHP8.1
+apt install -y php8.1 php8.1-bcmath php8.1-curl php8.1-gd php8.1-intl php8.1-mbstring php8.1-mysql php8.1-xml php8.1-zip # PPRI0603 : changement version des modules PHP pour passer en PHP8.1
+apt-get update # PPRI0603 : Ajout
+phpenmod -v 8.1 dom # PPRI0603 : Ajout
+update-alternatives --set php /usr/bin/php8.1 # PPRI0603 : Ajout des 3 lignes suivantes pour forcer l'utilisation de php8.1
+update-alternatives --set phar /usr/bin/phar8.1
+update-alternatives --set phar.phar /usr/bin/phar.phar8.1
+systemctl restart apache2
+php -r "copy('https://getcomposer.org/download/2.8.6/composer.phar', 'composer.phar');" # PPRI0603 : passage de la version de composer 2.2.6 à 2.8.6
+cp composer.phar /usr/local/bin/composer
+chmod a+x /usr/local/bin/composer
+curl -sL https://deb.nodesource.com/setup_18.x | sudo -E bash - # PPRI0603 : Passage de nodejs 14 vers nodejs 16
+apt-get install -y nodejs
+npm install -g yarn
+npm install -g configurable-http-proxy
+apt-get install -y mysql-server
+systemctl restart mysql
+cat > mysql_secure_sql.sql << EOF
+ALTER USER IF EXISTS 'root'@'localhost' IDENTIFIED BY 'RemoteLabz-2022$';
+DELETE FROM mysql.user WHERE User='';
+DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');
+DROP DATABASE IF EXISTS test;
+DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';
+CREATE USER IF NOT EXISTS 'user'@'localhost' IDENTIFIED WITH mysql_native_password BY 'Mysql-Pa33wrd$';
+CREATE DATABASE IF NOT EXISTS remotelabz;
+GRANT ALL ON remotelabz.* TO 'user'@'localhost';
+FLUSH PRIVILEGES;
+EOF
+
+mysql -sfu root < mysql_secure_sql.sql
+rm ./mysql_secure_sql.sql
+
+echo "The MySQL is configured with user \"user\" and the password \"Mysql-Pa33wrd$\""
+apt-get install -y rabbitmq-server php8.1-amqp # PPRI0603 : Modification du module pour l'adapter à PHP 8.1
+systemctl restart rabbitmq-server
+if ! rabbitmqctl list_users | grep -q 'remotelabz-amqp'; then
+    rabbitmqctl add_user 'remotelabz-amqp' 'password-amqp'
+fi
+rabbitmqctl set_permissions -p '/' 'remotelabz-amqp' '.*' '.*' '.*'
+service rabbitmq-server restart
+rabbitmqctl set_user_tags remotelabz-amqp administrator
+
+rabbitmq-plugins enable rabbitmq_management
+
+#To test if the connexion to the RabbitMQ works fine
+#rabbitmqctl authenticate_user 'remotelabz-amqp' "password-amqp"
+
+cd ~
+wget -q https://github.com/OpenVPN/easy-rsa/releases/download/v3.0.8/EasyRSA-3.0.8.tgz
+tar -xzf EasyRSA-3.0.8.tgz
+ln -s EasyRSA-3.0.8 EasyRSA
+cd EasyRSA
+
+cat > vars << EOF
+set_var EASYRSA_BATCH           "yes"
+set_var EASYRSA_REQ_CN         "RemoteLabz-VPNServer-CA"
+set_var EASYRSA_REQ_COUNTRY    "FR"
+set_var EASYRSA_REQ_PROVINCE   "Grand-Est"
+set_var EASYRSA_REQ_CITY       "Reims"
+set_var EASYRSA_REQ_ORG        "RemoteLabz"
+set_var EASYRSA_REQ_EMAIL      "contact@remotelabz.com"
+set_var EASYRSA_REQ_OU         "RemoteLabz-VPNServer"
+set_var EASYRSA_ALGO           "ec"
+set_var EASYRSA_DIGEST         "sha512"
+set_var EASYRSA_CURVE          secp384r1
+#5 ans de validité pour le CA
+set_var EASYRSA_CA_EXPIRE      1825
+#5 ans de validité pour les certificats
+set_var EASYRSA_CERT_EXPIRE    1825
+EOF
+
+sed -i "s/RANDFILE/#RANDFILE/g" openssl-easyrsa.cnf
+
+./easyrsa init-pki
+echo "🔥 In the documentation, the password used to secure the CA certificate is 'R3mot3!abz-0penVPN-CA2020'"
+echo "You can use the same password for the next question"
+echo "This password have to be added in you .env file. It is used to sign all users VPN certificate"
+./easyrsa build-ca
+
+cp ./vars ./vars-ca
+
+sed -i "s/RemoteLabz-VPNServer-CA/RemoteLabz-VPNServer/g" vars
+
+echo "Generation of the client certificate"
+./easyrsa gen-req RemoteLabz-VPNServer nopass
+echo "You have to type your CA password use before (R3mot3!abz-0penVPN-CA2020)"
+./easyrsa sign-req server RemoteLabz-VPNServer
+
+echo "Copy the certificate file to your openvpn directory"
+cp pki/issued/RemoteLabz-VPNServer.crt /etc/openvpn/server
+cp pki/private/RemoteLabz-VPNServer.key /etc/openvpn/server
+cp pki/ca.crt /etc/openvpn/server
+cp pki/private/ca.key /etc/openvpn/server
+
+
+openvpn --genkey --secret ta.key
+cp ta.key /etc/openvpn/server
+openssl dhparam -out dh2048.pem 2048
+mv dh2048.pem /etc/openvpn/server
+chown www-data: /etc/openvpn/server -R
+
+cat > /etc/openvpn/server/server.conf << EOF
+port 1194
+proto udp
+dev tun
+ca ca.crt
+cert RemoteLabz-VPNServer.crt
+key RemoteLabz-VPNServer.key
+dh dh2048.pem
+cipher AES-256-GCM
+tls-auth ta.key 0
+server 10.8.0.0 255.255.255.0
+keepalive 10 120
+persist-key
+persist-tun
+status /var/log/openvpn/openvpn-status.log
+log /var/log/openvpn/openvpn.log
+verb 1
+mute 20
+explicit-exit-notify 1
+duplicate-cn
+push "route 10.11.0.0 255.255.0.0"
+EOF
+
+chown :www-data /etc/openvpn/client
+chmod g+w /etc/openvpn/client
+
+systemctl enable openvpn-server@server
+service openvpn-server@server start
+
+sysctl -w net.ipv4.ip_forward=1
+sed -i 's/net.ipv4.ip_forward = 0/net.ipv4.ip_forward = 1/g' /etc/sysctl.conf
+sed -i 's/#net.ipv4.ip_forward =/net.ipv4.ip_forward =/g' /etc/sysctl.conf
+
+# To avoid error message "Too many opened files" and containers don't stop
+sysctl -n -w fs.inotify.max_user_instances=512
+sysctl -n -w fs.inotify.max_user_watches=16384
+echo "fs.inotify.max_user_watches=16384" >> /etc/sysctl.conf
+echo "fs.inotify.max_user_instances=512" >> /etc/sysctl.conf
+
+echo "=== Installation de Docker ==="
+# Installer Docker
+apt-get update
+apt-get install -y \
+    ca-certificates \
+    curl \
+    gnupg \
+    lsb-release
+
+# Ajouter la clé GPG officielle de Docker
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/$(. /etc/os-release && echo "$ID")/gpg | \
+    gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+chmod a+r /etc/apt/keyrings/docker.gpg
+
+# Ajouter le dépôt Docker
+echo \
+  "deb [arch=$(dpkg --print-architecture) \
+  signed-by=/etc/apt/keyrings/docker.gpg] \
+  https://download.docker.com/linux/$(. /etc/os-release && echo "$ID") \
+  $(lsb_release -cs) stable" | \
+  tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# Installer Docker Engine
+apt-get update
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# Activer et démarrer le service Docker
+systemctl enable docker
+systemctl start docker
+
+echo "=== Docker installé avec succès ==="
+
+# Vérifier que docker-compose est accessible via le plugin
+if ! docker compose version &>/dev/null; then
+  echo "docker-compose (plugin) n’est pas correctement installé."
+  exit 1
+fi
+
+# Créer le dossier de travail
+mkdir -p librenms-docker
+cd librenms-docker || exit 1
+
+# Créer le fichier .env
+cat > .env <<EOF
+TZ=Europe/Paris
+LIBRENMS_PORT=8003
+MYSQL_ROOT_PASSWORD=librenms_root
+MYSQL_PASSWORD=librenms_db_pass
+MYSQL_DATABASE=librenms
+MYSQL_USER=librenms
+EOF
+
+# Créer le fichier docker-compose.yml
+cat > docker-compose.yml <<EOF
+version: '3.5'
+
+services:
+  db:
+    image: mariadb:10.5
+    container_name: librenms_db
+    environment:
+      MYSQL_ROOT_PASSWORD: \${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: \${MYSQL_DATABASE}
+      MYSQL_USER: \${MYSQL_USER}
+      MYSQL_PASSWORD: \${MYSQL_PASSWORD}
+    volumes:
+      - db_data:/var/lib/mysql
+    restart: unless-stopped
+
+  librenms:
+    image: librenms/librenms:latest
+    container_name: librenms
+    ports:
+      - "\${LIBRENMS_PORT}:8000"
+    environment:
+      DB_HOST: db
+      DB_NAME: \${MYSQL_DATABASE}
+      DB_USER: \${MYSQL_USER}
+      DB_PASSWORD: \${MYSQL_PASSWORD}
+      TZ: \${TZ}
+    volumes:
+      - librenms_data:/data
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  syslog-ng:
+    image: librenms/librenms:latest
+    container_name: librenms_syslog
+    command: /usr/sbin/syslog-ng -F -p /var/run/syslog-ng.pid
+    volumes:
+      - librenms_data:/data
+    depends_on:
+      - librenms
+    restart: unless-stopped
+
+volumes:
+  db_data:
+  librenms_data:
+EOF
+
+# Démarrer les conteneurs en arrière-plan
+docker compose up -d
+
+echo "=== Installation terminée ==="
+echo "Accédez à LibreNMS via : http://localhost:8003"
+echo "🔥 The root password for your MySQL database is set to RemoteLabz-2022$"
+echo "🔥 The user password for the remotelabz MySQL database is set to Mysql-Pa33wrd$"
+echo "Your .env.local will be configured with this default password. If you choose to change it, don't forget to modify your .env.local file"
+echo "To change it, you can read the documentation online httsp://docs.remotelabz.com"

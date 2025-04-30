@@ -1,0 +1,411 @@
+{% extends 'dashboard.base.html.twig' %}
+
+{% block breadcrumbs %}
+    {% set breadcrumbs = breadcrumbs|merge({ 'Users': path('users') }) %}
+    {{ parent() }}
+{% endblock %}
+
+{% block header %}
+    {% set category = 'admin' %}
+    {{ parent() }}
+{% endblock %}
+
+{% block sidebar %}
+    {% set category = 'users' %}
+    {{ parent() }}
+{% endblock %}
+
+
+{% block wrapper %}
+    {% embed 'modal.html.twig' with {'title': 'Import from file'|trans, 'class': 'import-user-modal'} %}
+        {% block body %}
+            <p>The CSV file, encoded in UTF8, must contains user information in the following format:
+                <br>
+                <br>
+                <kbd>lastname,firstname,email,group</kbd>
+                <br><br>
+                The password of each user will be send by email<br>
+                <br>
+                <span class="text-danger">Warning:</span> Lines with an already used e-mail will be silently ignored.
+            </p>
+            {{ form(addUserFromFileForm, {'id': 'addUserFromFileForm'}) }}
+            {# <div class="custom-file">
+                <input type="file" class="custom-file-input" id="customFile">
+                <label class="custom-file-label" for="customFile">Choose file</label>
+              </div> #}
+        {% endblock %}
+    {% endembed %}
+   
+
+    <div class="top-panel">
+        <div class="quick-actions">
+            {% if is_granted('ROLE_ADMINISTRATOR') %}
+                <a href="{{ path('new_user') }}" class="btn btn-success">{{ 'New user'|trans }}</a>
+                <button class="btn btn-info" data-target=".import-user-modal" data-toggle="modal" type="button">
+                    <i class="fa fa-upload"></i> {{ 'Import from file'|trans }}
+                </button>
+            {% endif %}
+        </div>
+        <ul class="nav-links nav nav-tabs">
+            {% set role = app.request.query.get('role') %}
+            <li {% if role is null %} class="active"{% endif %}>
+                <a href="{{ path('users', app.request.query|merge({role: null, page: null})) }}">
+                    <span>All</span> <span class="badge badge-pill">{{ count.total }}</span>
+                </a>
+            </li>
+            <li {% if role == 'admin' %}class="active"{% endif %}>
+                <a href="{{ path('users', app.request.query|merge({role: 'admin', page: null})) }}">
+                    <span>Admins</span> <span class="badge badge-pill">{{ count.admins }}</span>
+                </a>
+            </li>
+            <li {% if role == 'editor' %}class="active"{% endif %}>
+                <a href="{{ path('users', app.request.query|merge({role: 'editor', page: null})) }}">
+                    <span>Editors</span> <span class="badge badge-pill">{{ count.teacherEditors }}</span>
+                </a>
+            </li>
+            <li {% if role == 'teacher' %}class="active"{% endif %}>
+                <a href="{{ path('users', app.request.query|merge({role: 'teacher', page: null})) }}">
+                    <span>Teachers</span> <span class="badge badge-pill">{{ count.teachers }}</span>
+                </a>
+            </li>
+            <li {% if role == 'student' %}class="active"{% endif %}>
+                <a href="{{ path('users', app.request.query|merge({role: 'student', page: null})) }}">
+                    <span>Students</span> <span class="badge badge-pill">{{ count.students }}</span>
+                </a>
+            </li>
+        </ul>
+    </div>
+
+    <div class="search-panel">
+        <form action="{{ path('users') }}" method="GET" class="d-flex align-items-center">
+            <div class="search-field flex-grow-1 mr-3">
+                <i class="fa fa-search"></i>
+                <input type="search" class="form-control input-sm" name="search" placeholder="Search by name or email" spellcheck="false" value="{{ search|default('') }}" type="search" />
+            </div>
+            <div class="mr-2">
+                {% set searchLimit = app.request.query.get("limit") %}
+                <select name="limit" class="form-control">
+                    <option value="10" {% if searchLimit != 30 and searchLimit != 50 %}selected{% endif %}>10</option>
+                    <option value="30" {% if searchLimit is defined and searchLimit == 30 %}selected{% endif %}>30</option>
+                    <option value="50" {% if searchLimit is defined and searchLimit == 50 %}selected{% endif %}>50</option>
+                </select>
+            </div>
+            <div class="mr-3">
+                users per page
+            </div>
+            <button class="btn btn-primary" type="submit">{{ svg('search') }}</button>
+        </form>
+    </div>
+    <div class="multipleUsersActions d-flex justify-content-end align-items-center mt-3 mr-3" data-user="{{ currentUser }}">
+        <input type="checkbox" name="selectAll" id="selectAll" value="selectAll" onClick="checkAll()" class="mr-1"/>
+        <a class="btn btn-default" href="#" id="dropdownUserSettings" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+            <i class="fa fa-user-cog"></i>
+            <i class="fa fa-caret-down"></i>
+        </a>
+        <div class="dropdown-menu dropdown-menu-right" aria-labelledby="dropdownUserSettings" style="position: absolute; will-change: transform;">
+            <button class="btn btn-warning" onClick="toggleUsers('block')" type="button">Block</button>
+            <button class="btn btn-warning" onClick="toggleUsers('unblock')" type="button">Unblock</button>
+            <div class="dropdown-divider"></div>
+            <button class="btn btn-danger" data-toggle="modal" onClick="deleteUsers()" type="button">
+                {{ 'Delete'|trans }}
+            </button>                         
+        </div>
+    </div>
+
+    {% set orderBy = app.request.query.get('orderBy')|default('lastName') %}
+    {% set orderDirection = app.request.query.get('orderDirection')|default('ASC') %}
+    {% set invertOrderDirection = 'ASC' %}
+    {% if orderDirection == 'ASC' %}
+        {% set invertOrderDirection = 'DESC' %}
+    {% endif %}
+
+    <div class="table-responsive item-panel user-panel">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th scope="col">
+                        <a href="{{ path('users', app.request.query|merge({orderBy: 'lastName', orderDirection: invertOrderDirection })) }}" title="Sort by last name">
+                            User
+                            {%- if orderBy == 'lastName' -%}
+                                <span class="px-2">
+                                    {%- if orderDirection == 'ASC' -%}
+                                        {{ svg('sort-lowest') }}
+                                    {%- else -%}
+                                        {{ svg('sort-highest') }}
+                                    {%- endif -%}
+                                </span>
+                            {%- endif -%}
+                        </a>
+                    </th>
+                    <th scope="col">
+                        <a href="{{ path('users', app.request.query|merge({orderBy: 'createdAt', orderDirection: invertOrderDirection })) }}" title="Sort by creation date">
+                            Created on
+                            {%- if orderBy == 'createdAt' -%}
+                                <span class="px-2">
+                                    {%- if orderDirection == 'ASC' -%}
+                                        {{ svg('sort-lowest') }}
+                                    {%- else -%}
+                                        {{ svg('sort-highest') }}
+                                    {%- endif -%}
+                                </span>
+                            {%- endif -%}
+                        </a>
+                    </th>
+                    <th scope="col">
+                        <a href="{{ path('users', app.request.query|merge({orderBy: 'lastActivity', orderDirection: invertOrderDirection })) }}" title="Sort by last activity date">
+                            Last activity
+                            {%- if orderBy == 'lastActivity' -%}
+                                <span class="px-2">
+                                    {%- if orderDirection == 'ASC' -%}
+                                        {{ svg('sort-lowest') }}
+                                    {%- else -%}
+                                        {{ svg('sort-highest') }}
+                                    {%- endif -%}
+                                </span>
+                            {%- endif -%}
+                        </a>
+                    </th>
+                    <th scope="col">
+                        <a href="javascript:void(0)">Groups</a>
+                    </th>
+                    <th scope="col"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                        {% embed 'modal-delete-user.html.twig' with {'title': 'Delete user'|trans, 'class': 'delete-user-modal'~loop.index} %}
+                            {% block content %}Do you confirm to delete this user ?{% endblock %}
+                        {% endembed %}
+                    <tr>
+                        <td>
+                            <div class="wrapper d-flex align-items-center item">
+                                <div class="item-user-avatar mr-2">
+                                    <img src="/users/{{user.id}}/picture?size=32" alt="{{user.name}}" class="rounded-circle" />
+                                </div>
+                                <div class="item-left d-flex flex-column">
+                                    <div>
+                                        <a href="{{ path('edit_user', {'id': user.id}) }}" class="item-name">
+                                            {{- user.name -}}
+                                        </a>
+                                        {% if 'ROLE_ADMINISTRATOR' in user.roles or 'ROLE_SUPER_ADMINISTRATOR' in user.roles %}
+                                            <label class="badge badge-success">Admin</label>
+                                        {% elseif 'ROLE_TEACHER_EDITOR' in user.roles %}
+                                            <label class="badge badge-secondary">Editor</label>
+                                        {% elseif 'ROLE_TEACHER' in user.roles %}
+                                            <label class="badge badge-info">Teacher</label>
+                                        {% endif %}
+                                        {% if not user.enabled %}
+                                            <label class="badge badge-warning">Blocked</label>
+                                        {% endif %}
+                                        {# {% if user.email == app.user.email %}It's you!{% endif %} #}
+                                    </div>
+                                    <div>
+                                        {% if is_granted('ROLE_ADMINISTRATOR') %}
+                                        <a href="mailto:{{user.email}}" class="item-user-email">
+                                            {{- user.email -}}
+                                        </a>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                <div class="item-right d-flex flex-column text-right">
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="timeago" datetime="{{ user.createdAt|date }}" data-toggle="tooltip" data-placement="top" title="{{ user.createdAt|date('M d, Y h:ia') }}"></span>
+                        </td>
+                        <td>
+                            {% if user.lastActivity is not null %}
+                                <span class="timeago" datetime="{{ user.lastActivity|date }}" data-toggle="tooltip" data-placement="top" title="{{ user.lastActivity|date('M d, Y h:ia') }}"></span>
+                            {% else %}
+                                Never
+                            {% endif %}
+                        </td>
+                        <td>
+                            <button class="btn btn-default" onClick="changeGroupDisplay({{user.id}});">
+                                <i class="fa fa-caret-down" id="{{user.id}}-iconDisplayGroup"></i>
+                            </button>
+                        </td>
+                        <td class="text-right">
+                            <input type="checkbox" name="selectUser" class="selectUser" value="{{user.id}}"/>
+                            <a class="btn btn-default" href="/admin/users/{{user.id}}/edit">Edit</a>
+                            
+                            {% if 'ROLE_SUPER_ADMINISTRATOR' not in user.roles %}
+
+                            <a class="btn btn-default" href="#" id="dropdownUserSettings" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                                <i class="fa fa-user-cog"></i>
+                                <i class="fa fa-caret-down"></i>
+                            </a>
+                            <div class="dropdown-menu dropdown-menu-right" aria-labelledby="dropdownUserSettings" style="position: absolute; will-change: transform;">
+                            <a class="text-warning" href="{{ path('toggle_user', {id: user.id}) }}">
+                                {% if user.enabled %}
+                                <button class="btn btn-warning">Block</button>
+                                {% else %}
+                                Unblock
+                            {% endif %}
+                            </a>
+                            <a class="text-info ml-2" href="/?_switch_user={{user.email}}">
+                                <button class="btn btn-info">Impersonate</button>
+                            </a>
+                            <div class="dropdown-divider"></div>
+                            <button class="btn btn-danger" data-target={{'.delete-user-modal'~loop.index}} data-toggle="modal" type="button">
+                               {{ 'Delete'|trans }}
+                            </button>                         
+                            </div>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr id="{{user.id}}-groups" style="display: none;">
+                        <td>
+                            {% for group in user.groupsInfo %}
+                                {% if group.visibility == 2 %}
+                                    <label class="badge badge-success">{{group.name}}</label>
+                                {% elseif group.visibility == 1 %}
+                                    <label class="badge badge-info">{{group.name}}</label>
+                                {% elseif group.visibility == 0 %}
+                                    <label class="badge badge-warning">{{group.name}}</label>
+                                {% endif %}
+                            {% endfor %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        {% set pagesNumber = count.current > limit ? count.current // limit + 1 : 1 %}
+        <nav aria-label="Page navigation example">
+            <ul class="pagination mt-3 justify-content-center">
+                <li class="page-item {% if page <= 1 %}disabled{%endif%}">
+                    <a class="page-link" href="{{ path('users', app.request.query|merge({page: page-1})) }}">Previous</a>
+                </li>
+                {% for i in 1.. pagesNumber %}
+                    <li class="page-item {% if i == page %}active{%endif%}"><a class="page-link" href="{{ path('users', app.request.query|merge({page: i})) }}">{{ i }}</a></li>
+                {% endfor %}
+                <li class="page-item {% if page >= pagesNumber %}disabled{%endif%}">
+                    <a class="page-link" href="{{ path('users', app.request.query|merge({page: page+1})) }}">Next</a>
+                </li>
+            </ul>
+        </nav>
+    </div>
+{% endblock %}
+
+{% block javascripts %}
+    {{ parent() }}
+    {{ encore_entry_script_tags('timeago') }}
+    {{ encore_entry_script_tags('user') }}
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.4/jquery.min.js"></script>
+    <script type="text/javascript">
+        function changeGroupDisplay(id) {
+            if (document.getElementById(id+"-groups").style.display == "none") {
+                document.getElementById(id+"-groups").style.display = "block";
+                document.getElementById(id+"-iconDisplayGroup").className = "fa fa-caret-up";
+            }
+            else {
+                document.getElementById(id+"-groups").style.display = "none";
+                document.getElementById(id+"-iconDisplayGroup").className = "fa fa-caret-down";
+            }
+        }
+
+        function checkAll() {
+            const boxes = document.querySelectorAll(".selectUser");
+            let checkAll = document.getElementById("selectAll");
+
+            if (checkAll.checked == true) {
+                for(let box of boxes) {
+                    box.checked = true
+                }
+            }
+            else {
+                for(let box of boxes) {
+                    box.checked = false
+                }
+            }
+        }
+
+
+        function deleteUsers() {
+            const boxes = document.querySelectorAll(".selectUser");
+            var userRating = document.querySelector('.multipleUsersActions');
+            var appUser = JSON.parse(userRating.dataset.user);
+            var usersToDelete = [];
+            var i = 0;
+
+            for (let box of boxes) {
+                if (box.checked) {
+                    usersToDelete.push(box.value);
+                }
+            }
+
+            for (let userId of usersToDelete) {
+                $.ajax({
+                    type: "GET",
+                    url: `/api/users/${userId}`
+                }).then((response)=> {
+                    i++;
+                    const userToDelete = response;
+                    let superAdmin = false;
+                    for (let role of userToDelete.roles) {
+                        if (role == "ROLE_SUPER_ADMINISTRATOR") {
+                            superAdmin = true;
+                            break;
+                        }
+                    }
+                    if (userToDelete.id != appUser.id && superAdmin == false && userToDelete.labInstances.length == 0) {
+                        $.ajax({
+                            type: "DELETE",
+                            url: `/api/users/${userToDelete.id}`
+                        }).then(()=> {
+                            if (i == usersToDelete.length) {
+                                location.href = "{{ path('users') }}"; 
+                            }
+                        })
+                    }
+                })  
+            }
+        }
+
+        function toggleUsers(block) {
+            const boxes = document.querySelectorAll(".selectUser");
+            var userRating = document.querySelector('.multipleUsersActions');
+            var appUser = JSON.parse(userRating.dataset.user);
+            var usersToToggle = [];
+            var request = block;
+            var i = 0;
+
+            for (let box of boxes) {
+                if (box.checked) {
+                    usersToToggle.push(box.value);
+                }
+            }
+
+            for (let userId of usersToToggle) {
+                $.ajax({
+                    type: "GET",
+                    url: `/api/users/${userId}`
+                }).then((response) => {
+                    i++;
+                    const userToToggle = response;
+                    let superAdmin = false;
+                    for (let role of userToToggle.roles) {
+                        if (role == "ROLE_SUPER_ADMINISTRATOR") {
+                            superAdmin = true;
+                            break;
+                        }
+                    }
+                    if (userToToggle.id != appUser.id && superAdmin == false) {
+                        $.ajax({
+                            type: "PATCH",
+                            url: `/api/users/${userToToggle.id}`,
+                            data: JSON.stringify(request)
+                        }).then(()=> {
+                            if (i == usersToToggle.length) {
+                                location.href = "{{ path('users') }}"; 
+                            }
+                        })
+                    }
+                }) 
+            }
+        }
+    </script>
+{% endblock %}

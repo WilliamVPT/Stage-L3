@@ -1,0 +1,35 @@
+{% extends 'dashboard.base.html.twig' %}
+
+{% block breadcrumbs %}
+    {%- set breadcrumbs = breadcrumbs|merge({ ("Sandbox"): path('sandbox') }) -%}
+    {{ parent() }}
+{% endblock %}
+
+{% block sidebar %}
+    {% set category = 'sandbox' %}
+    {{ parent() }}
+{% endblock %}
+
+{% block wrapper %}
+<div class="content-title">
+    <div class="content-title-infos">
+        <h1>{{ 'Sandbox'|trans }}</h1>
+    </div>
+</div>
+<div class="content-body">
+    <!-- <h1 class="mb-4">{{ lab.name }}</h1> -->
+    <div class="row">
+       {% if not(sandboxlab) %}
+        <div class="col">Start first the Service_sandbox device to start a DHCP service for your lab. Start next the device you want to modify and create.
+        </div>
+        {% endif %}
+    </div>
+    <div class="row">
+        <div class="col">{{ react_component('InstanceManager', {'props': props}) }}</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block javascripts %}
+    {{ parent() }}
+{% endblock %}

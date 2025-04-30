@@ -1,0 +1,25 @@
+{% extends 'flavor/index.html.twig' %}
+
+{% block breadcrumbs %}
+    {% set breadcrumbs = app.request.uri ends with 'edit' ? breadcrumbs : breadcrumbs|merge({ 'New': path('new_flavor') }) %}
+    {{ parent() }}
+{% endblock %}
+
+{% block wrapper %}
+    <div class="content-title">
+        <div class="content-title-infos">
+            <h1>
+                {% if app.request.uri ends with 'edit' %}
+                    {{ 'Edit flavor'|trans }}: {{ flavor.name }}
+                {% else %}
+                    {{ 'New flavor'|trans }}
+                {% endif %}
+            </h1>
+        </div>
+    </div>
+    <div class="content-body">{{ form(form) }}</div>
+{% endblock %}
+
+{% block javascripts %}
+    {{ parent() }}
+{% endblock %}

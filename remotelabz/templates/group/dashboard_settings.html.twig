@@ -1,0 +1,187 @@
+{% extends 'dashboard.base.html.twig' %}
+
+{% block header %}
+    {% set category = 'dashboard_groups' %}
+    {{ parent() }}
+{% endblock %}
+
+{% form_theme form 'custom.form.vertical.html.twig' %}
+
+{% block breadcrumbs %}
+    {% set breadcrumbs = breadcrumbs|merge({ 'Settings': path('dashboard_edit_group', {'slug': group.getPath()}) }) %}
+    {% set currentGroup = group %}
+    {% for parent in group.getFullyQualifiedName()|reverse %}
+        {% set breadcrumbs = breadcrumbs|merge({ (parent): path('dashboard_show_group', {'slug': currentGroup.getPath()}) }) %}
+        {% set currentGroup = currentGroup.parent %}
+    {% endfor %}
+    {{ parent() }}
+{% endblock %}
+
+{% macro groupParent(group) %}
+    {% if group.parent is not null %}{{ _self.groupParent(group.parent) }} {{ group.parent.name }} /{% endif %}
+{% endmacro %}
+
+{% block sidebar %}
+    {% set category = 'dashboard_edit_group' %}
+    {% include "group.sidebar.html.twig" %}
+{% endblock %}
+
+{% block wrapper %}
+    {% macro groupParent(group) %}
+       {% if group.parent is not null %}{{ _self.groupParent(group.parent) }} <a href="{{ path('admin_show_group', {slug: group.parent.path}) }}">{{ group.parent.name }}</a> /{% endif %}
+    {% endmacro %}
+    <div class="content-title">
+        <div class="content-title-infos">
+            <h3>Group settings</h3>
+        </div>
+    </div>
+    <div class="content-body">
+        <h3>Edit</h3>
+        <hr>
+        <div class="row">
+            <div class="col-md-3">
+                Groups allow you to manage users and handle permissions across multiple activities. Members of a group have access to all of its activities.
+                <br><br>
+                Groups can also be nested by creating subgroups.
+                <br><br>
+                Activities that belong to a group are prefixed with the group namespace. Existing activities may be moved into a group.
+            </div>
+            <div class="col-md-9">
+                {{ form_start(form) }}
+                {{ form_row(form.name) }}
+                <div class="form-group">
+                    {{ form_label(form.slug) }}
+
+                    <div class="input-group">
+                        <div class="input-group-prepend">
+                            <span class="input-group-text">{{ app.request.getSchemeAndHttpHost() }}/
+                                {%- if group.parent is defined -%}
+                                    {%- set path = group.parent.getPath()|default('') -%}
+                                    {%- if path is not empty -%}
+                                        {{ path }}/
+                                    {%- endif -%}
+                                {%- endif -%}
+                            </span>
+                        </div>
+                        {{ form_widget(form.slug) }}
+                    </div>
+                </div>
+                {{ form_row(form.description) }}
+                <div class="form-group">
+                        {# pattern="[a-zA-Z0-9_\.][a-zA-Z0-9_\-\.]*[a-zA-Z0-9_\-]|[a-zA-Z0-9_]" #}
+                    {{- form_label(form.visibility) -}} (Not yet implemented)
+                    <div class="mb-3">
+                        {{- form_help(form.visibility, {attr: {class: 'mb-3'}}) -}}
+                    </div>
+                    <div id="{{ form.visibility.vars.id }}" aria-describedby="{{ form.visibility.vars.id }}_help">
+                        <div class="form-check">
+                            <input
+                                type="radio"
+                                id="{{ form.visibility.children[0].vars.id }}"
+                                name="{{ form.visibility.children[0].vars.full_name }}"
+                                required="required"
+                                class="form-check-input"
+                                value="{{ form.visibility.children[0].vars.value }}"
+                                {%- if app.request.attributes.get('_route') == 'new_group' -%}
+                                 checked  
+                                {%- elseif group.visibility is not null and group.visibility == '0' -%}
+                                 checked
+                                {%- endif -%}
+                            >
+                            <label class="form-check-label required" for="{{ form.visibility.children[0].vars.id }}">
+                                <div><i class="fa fa-lock s20 text-center"></i> Private</div>
+                                <div class="text-muted visibility-help">The group and its activities can only be viewed by yourself.</div>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input
+                                type="radio"
+                                id="{{ form.visibility.children[1].vars.id }}"
+                                name="{{ form.visibility.children[1].vars.full_name }}"
+                                required="required"
+                                class="form-check-input"
+                                value="{{ form.visibility.children[1].vars.value }}"
+                                {%- if group.visibility is not null and group.visibility == '1' -%}
+                                 checked
+                                {%- endif -%}
+                            >
+                            <label class="form-check-label required" for="{{ form.visibility.children[1].vars.id }}">
+                                <div><i class="fa fa-shield-alt s20 text-center"></i> Internal</div>
+                                <div class="text-muted visibility-help">The group and any internal activities can be viewed by members.</div>
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input
+                                type="radio"
+                                id="{{ form.visibility.children[2].vars.id }}"
+                                name="{{ form.visibility.children[2].vars.full_name }}"
+                                required="required"
+                                class="form-check-input"
+                                value="{{ form.visibility.children[2].vars.value }}"
+                                {%- if group.visibility is not null and group.visibility == '2' -%}
+                                 checked
+                                {%- endif -%}
+                            >
+                            <label class="form-check-label required" for="{{ form.visibility.children[2].vars.id }}">
+                                <div><i class="fa fa-globe s20 text-center"></i> Public</div>
+                                <div class="text-muted visibility-help">The group and any internal projects can be viewed by any logged in user.</div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                {{ form_widget(form.parent) }}
+                <div class="form-actions">
+                    {{ form_widget(form.reset) }}
+                    {{ form_widget(form.submit) }}
+                </div>
+                
+                {{ form_end(form, {render_rest: false}) }}
+            </div>
+        </div>
+        {% if (group.isOwner(app.user) or is_granted('ROLE_ADMINISTRATOR')) %}
+        <div class="row">
+            <div class="col">
+                <h3>Change namespace</h3>
+                <hr>
+                <div class="row">
+                    <div class="col">
+                        <p>A group namespace can only be deleted by its owner.</p>
+                        <p><strong>Warning: Changing group namespace may have side-effects.</strong></p>
+                        <form action="{{ path('dashboard_edit_group_parent', {slug: group.path}) }}" method="POST">
+                            {{- react_component('GroupSelect', {
+                                'props': {
+                                    "endpoint": path('api_groups'),
+                                    "user": app.user.email,
+                                    "fieldName": "parent",
+                                    "exclude": [group.id],
+                                    "isClearable": true,
+                                    "placeholder": "Search for a group or leave empty to clear namespace"
+                                }
+                            }) -}}
+                            <button class="btn btn-warning mt-3" type="submit">Change group namespace</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row mt-3">
+            <div class="col">
+                <h3>Delete</h3>
+                <hr>
+                <div class="row">
+                    <div class="col">
+                        <p>A group can only be deleted by its owner.</p>
+                        <p><strong>Deleted groups cannot be restored! Proceed with caution.</strong></p>
+                        {% embed 'modal-delete-group.html.twig' with {'title': 'Delete group'|trans, 'class': 'delete-group-modal'} %}
+                            {% block content %}Do you confirm to delete this group ?{% endblock %}
+                        {% endembed %}
+                        <button class="btn btn-danger" data-target={{'.delete-group-modal'}} data-toggle="modal" type="button">
+                               {{ 'Delete'|trans }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+{% endblock %}

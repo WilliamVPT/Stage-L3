@@ -1,0 +1,31 @@
+.page-item {
+    &.active {
+        .page-link {
+            background-color: theme-color("primary");
+            border-color: theme-color("primary");
+        }
+    }
+}
+
+[theme=dark] {
+    .page-link {
+        background-color: theme-color("dark");
+        border-color: lighten(map-get($theme-colors, "dark-lighter"), 7.5%);
+    }
+
+    .page-item {
+        &.disabled {
+            .page-link {
+                background-color: theme-color("dark-lighter");
+                border-color: lighten(map-get($theme-colors, "dark-lighter"), 2.55%);
+            }
+        }
+
+        &.active {
+            .page-link {
+                background-color: lighten(map-get($theme-colors, primary), 30%);
+                border-color: lighten(map-get($theme-colors, primary), 30%);
+            }
+        }
+    }
+}

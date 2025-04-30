@@ -1,0 +1,339 @@
+#!/bin/bash
+
+set -e
+
+ENV_FILE=".env.local"
+SYMLINK="N"
+
+if [ -f ./${ENV_FILE} ]; then
+     source ./${ENV_FILE}
+else
+     echo "Error: Environment file .env.local not found in ${ENV_FILE}. Please check this file exists and try again."
+     exit 1
+fi
+
+function debug() {
+  echo "$1"
+}
+
+function warning() {
+  echo "WARNING: $1"
+}
+
+function error() {
+  echo "ERROR: $1"
+}
+
+function quit_on_error() {
+  error $BASH_COMMAND ${BASH_LINENO[0]}
+  exit 1
+}
+
+function usage() {
+  echo "Usage: $0 [ -p port ] [-s ]" 1>&2
+}
+
+function exit_abnormal() {
+  usage
+  exit 1
+}
+
+trap 'quit_on_error' ERR
+
+debug "Starting remoteLabz-worker installation"
+
+# Check for ubuntu >24.04
+if [ ! $(which lsb_release) ] || [ $(lsb_release -is) != "Ubuntu" ] || [ $(lsb_release -rs) != "24.04" ]; then
+  error "Your platform is unsupported. Please use Ubuntu Server LTS 24.04."
+  exit 1
+fi
+# Check for root
+if [ "$(whoami)" != "root" ]; then
+    error "Installation aborted, root is required! Please reload the script as root to continue..."
+    exit 1
+fi
+
+while getopts "p:s" opt; do
+  case ${opt} in
+    p)
+      export REMOTELABZ_WORKER_PORT="$OPTARG"
+      ;;
+    s)
+      export SYMLINK="Y"
+      ;;
+    :)
+      echo "Option -$OPTARG requires an argument." >&2
+      exit_abnormal
+      ;;
+    *)
+      exit_abnormal
+      ;;
+  esac
+done
+
+# Environment variables
+if [ -z "$REMOTELABZ_WORKER_PATH" ]; then
+    export REMOTELABZ_WORKER_PATH=/opt/remotelabz-worker
+fi
+if [ -z "$REMOTELABZ_WORKER_PORT" ]; then
+    export REMOTELABZ_WORKER_PORT=8080
+fi
+
+if [ ${ADM_INTERFACE} = "ensX" ]; then
+    echo "You have to configure your .env.local file before to start the install process"
+    exit 1
+fi
+
+# ----------------------------------
+export SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
+export DEBIAN_FRONTEND=noninteractive
+export COMPOSER_ALLOW_SUPERUSER=1
+export PIP_ROOT_USER_ACTION=ignore # PPRI0603 : ignorer les avertissements liés à l'exécution de pip avec root
+
+SCRIPT=$(readlink -f "$0")
+SCRIPT_DIR=$(dirname "$SCRIPT")
+
+debug "Running apt-get to grab required packages"
+apt-get update
+apt-get install -y software-properties-common
+add-apt-repository -y ppa:ondrej/php
+apt-get update
+apt-get install -y ntp apache2 php8.1 php8.1-ssh2 zip unzip qemu-system-x86 qemu-kvm openvswitch-switch git pipx python3 python3-pip python3-setuptools python3-wheel python3-numpy python3-openvswitch php8.1-xml php8.1-curl php8.1-amqp logrotate lxc screen build-essential cmake libjson-c-dev libwebsockets-dev curl exim4 sshpass expect
+
+
+
+
+phpenmod -v 8.1 dom
+update-alternatives --set php /usr/bin/php8.1 # PPRI0603 : Ajout des 4 lignes suivantes pour forcer l'utilisation de php8.1
+update-alternatives --set phar /usr/bin/phar8.1
+update-alternatives --set phar.phar /usr/bin/phar.phar8.1
+systemctl restart apache2
+echo "OK ✔️"
+
+# Create user remotelabz-worker and remotelabz-worker group
+if [ ! $(getent passwd remotelabz-worker) ]; then
+  echo "Creating remotelabz-worker user"
+  useradd -N -m remotelabz-worker
+fi
+if [ ! $(getent group remotelabz-worker) ]; then
+  echo "Creating remotelabz-worker group"
+  groupadd remotelabz-worker
+fi
+
+usermod -aG remotelabz-worker www-data
+usermod -aG remotelabz-worker remotelabz-worker
+
+chgrp -R remotelabz-worker "${SCRIPTPATH}"
+chmod -R g+rwx "${SCRIPTPATH}"
+
+# ssh key
+# PPRI0603 : Demande de suppressoin du répertoire /home/remotelabz-worker s'il existe déjà
+if [ -d "/home/remotelabz-worker" ]; then
+    read -p "The /home/remotelabz-worker directory already exists. Do you want to delete it? (o/n) " reponse
+    if [[ $reponse == [oO] ]]; then
+        rm -rf /home/remotelabz-worker
+        mkdir /home/remotelabz-worker
+        mkdir /home/remotelabz-worker/.ssh
+        chown remotelabz-worker:remotelabz-worker /home/remotelabz-worker/.ssh
+        chmod 700 /home/remotelabz-worker/.ssh
+        ssh-keygen -t rsa -b 4096 -f /home/remotelabz-worker/.ssh/id_rsa
+        chown remotelabz-worker:remotelabz-worker /home/remotelabz-worker/.ssh/id_rsa*
+        chmod 600 /home/remotelabz-worker/.ssh/id_rsa
+        cat /home/remotelabz-worker/.ssh/id_rsa.pub | sudo tee -a /home/remotelabz-worker/.ssh/authorized_keys
+    else
+        echo "SSH keys cannot be created, please delete the remotelabz-worker directory."
+        read -p "Press Enter to continue ..."
+    fi
+fi
+
+
+#echo "Configure data network"
+#ovs-vsctl --may-exist add-br "${BRIDGE_INT}"
+# TODO: Test if ${DATA_INTERFACE} has an IP to avoid to shutdown the connexion
+# If ${DATA_INTERFACE} has an IP address, perhaps it's the actual network interface
+# and not a second interface reserved for data of the VMs
+#ovs-vsctl --may-exist add-port "${BRIDGE_INT}" "${DATA_INTERFACE}"
+#ip link set up dev "${BRIDGE_INT}"
+#ip link set up dev "${DATA_INTERFACE}"
+
+echo "IP configuration of the data network for the VMs and forward between interfaces"
+#ip addr add "${BRIDGE_INT_IP_ADDRESS}" dev "${BRIDGE_INT}" || true
+ip addr add "${DATA_INT_IP_ADDRESS}" dev "${DATA_INTERFACE}" || true
+sed -i 's/[#| ]*net.ipv4.ip_forward[ ]*=[ |0|1]*/net.ipv4.ip_forward = 1/g' /etc/sysctl.conf
+echo "OK ✔️"
+
+echo "Adding sudo permissions for remotelabz-worker user"
+cp config/sudo/remotelabz-worker /etc/sudoers.d/
+chmod 440 /etc/sudoers.d/remotelabz-worker
+echo "OK ✔️"
+
+# Composer
+echo "Installing Composer"
+if ! [ $(command -v composer) ]; then
+    cp composer.phar /usr/local/bin/composer
+    echo "OK ✔️"
+else
+  echo "Composer is already installed! Skipping."
+fi
+
+echo "Downloading Composer packages"
+(cd "${SCRIPTPATH}" && composer install)
+chown -R remotelabz-worker:remotelabz-worker "${SCRIPTPATH}"/vendor
+chmod -R 777 "${SCRIPTPATH}"/vendor
+echo "OK ✔️"
+
+# Folders
+debug "Creating images folder if it does not exists already..."
+if [ ${SYMLINK} = "Y" ]
+then
+  ln -fs "${SCRIPTPATH}" "${REMOTELABZ_WORKER_PATH}"
+else
+  cp -Rf "${SCRIPTPATH}" "${REMOTELABZ_WORKER_PATH}"
+fi
+
+mkdir -p "${REMOTELABZ_WORKER_PATH}/images"
+chmod g+rwx "${REMOTELABZ_WORKER_PATH}/images"
+mkdir -p "${REMOTELABZ_WORKER_PATH}/instances"
+chmod g+rwx "${REMOTELABZ_WORKER_PATH}/instances"
+
+# Websockify
+echo "Installing WebSockify"
+if ! [ $(command -v websockify) ]; then
+    debug "Installing WebSockify..."
+    apt install python3-setuptools
+    git clone https://github.com/novnc/websockify.git "${REMOTELABZ_WORKER_PATH}/websockify"
+    (cd "${REMOTELABZ_WORKER_PATH}/websockify" && python3 setup.py install)
+    rm -rf "${REMOTELABZ_WORKER_PATH}/websockify"
+    echo "OK ✔️"
+else
+  echo "WebSockify is already installed! Skipping."
+fi
+
+# Grant OVS permissions to remotelabz group
+chmod g+rwx /var/run/openvswitch/db.sock
+chgrp remotelabz-worker /var/run/openvswitch/db.sock
+
+# Configure apache
+echo "Configuring Apache with port ${REMOTELABZ_WORKER_PORT}"
+if grep -Fxq "Listen ${REMOTELABZ_WORKER_PORT}" /etc/apache2/ports.conf; then
+  echo "Port ${REMOTELABZ_WORKER_PORT} is already configured in apache2."
+else
+  echo "Listen ${REMOTELABZ_WORKER_PORT}" >> /etc/apache2/ports.conf
+fi
+cp -f "${SCRIPTPATH}"/config/apache/100-remotelabz-worker.conf /etc/apache2/sites-available/100-remotelabz-worker.conf
+sed -i "s/Listen 8080/Listen ${REMOTELABZ_WORKER_PORT}/g" /etc/apache2/sites-available/100-remotelabz-worker.conf
+sed -i 's,/var/www/html/remotelabz-worker,'"${SCRIPTPATH}"',' /etc/apache2/sites-available/100-remotelabz-worker.conf
+ln -fs /etc/apache2/sites-available/100-remotelabz-worker.conf /etc/apache2/sites-enabled/100-remotelabz-worker.conf
+apache2ctl restart || true
+echo "OK ✔️"
+
+#Configure logrotate
+echo "Configuring logrotate"
+cp -f "${SCRIPTPATH}"/config/logrotate/remotelabz-worker /etc/logrotate.d
+echo "OK ✔️"
+
+echo "Setup remotelabz service"
+ln -fs "${SCRIPTPATH}"/bin/remotelabz-worker.service /etc/systemd/system/remotelabz-worker.service
+sudo systemctl enable remotelabz-worker.service
+sudo service remotelabz-worker start
+systemctl daemon-reload || true
+echo "OK ✔️"
+
+echo "Backup .env.local and copy .env to .env.local"
+if [ -f "${REMOTELABZ_WORKER_PATH}"/.env.local ]; then
+        cp "${REMOTELABZ_WORKER_PATH}"/.env.local "${REMOTELABZ_WORKER_PATH}"/.env.local.bak
+fi
+cp "${REMOTELABZ_WORKER_PATH}"/.env "${REMOTELABZ_WORKER_PATH}"/.env.local
+echo "OK ✔️"
+
+echo "Create certs directory"
+REP="${REMOTELABZ_WORKER_PATH}/config/certs/"
+if [ ! -d $REP ]; then
+        mkdir "${REMOTELABZ_WORKER_PATH}"/config/certs/
+fi;
+chown :remotelabz-worker "${REMOTELABZ_WORKER_PATH}"/config/certs/
+chmod g+w "${REMOTELABZ_WORKER_PATH}"/config/certs/
+echo "OK ✔️"
+
+echo "Installation of ttyd from its github project"
+cd ~
+if [ ! -d ttyd-1.7.3 ]; then
+        wget https://github.com/tsl0922/ttyd/archive/refs/tags/1.7.3.zip
+  unzip 1.7.3.zip
+        cd ttyd-1.7.3 && mkdir build && cd build
+        cmake ..
+        make && sudo make install
+fi;
+echo "OK ✔️"
+
+LXC=`lxc-ls -name "Migration"`;
+if [ "${LXC}" == "" ] ; then
+  echo "Creation of the container to prepare the DHCP service"
+  DOWNLOAD_KEYSERVER="keyserver.ubuntu.com" lxc-create -t download -n Migration -- -d debian -r bullseye -a amd64
+  echo "nameserver 1.1.1.3" > "/var/lib/lxc/Migration/rootfs/etc/resolv.conf"
+  echo "OK ✔️"
+fi;
+
+LXC=`lxc-ls -name "Debian"`;
+if [ "${LXC}" == "" ] ; then
+  echo "Creation of the container to prepare the DHCP service"
+  DOWNLOAD_KEYSERVER="keyserver.ubuntu.com" lxc-create -t download -n Debian -- -d debian -r bullseye -a amd64
+  echo "No default login, please use Sandbox to configure a new OS from this" >> "/var/lib/lxc/Debian/rootfs/etc/issue"
+  echo "nameserver 1.1.1.3" > "/var/lib/lxc/Debian/rootfs/etc/resolv.conf"
+  echo "OK ✔️"
+fi;
+
+LXC=`lxc-ls -name "Ubuntu24LTS"`;
+if [ "${LXC}" == "" ] ; then
+  echo "Creation of a container Ubuntu 24 LTS"
+  DOWNLOAD_KEYSERVER="keyserver.ubuntu.com" lxc-create -t download -n Ubuntu24LTS -- -d ubuntu -r focal -a amd64
+  echo "No default login, please use Sandbox to configure a new OS from this" >> "/var/lib/lxc/Ubuntu24LTS/rootfs/etc/issue"
+  echo "OK ✔️"
+fi;
+
+LXC=`lxc-ls -name "AlpineEdge"`;
+if [ "${LXC}" == "" ] ; then
+ echo "Creation of a container Alpine Edge"
+ DOWNLOAD_KEYSERVER="keyserver.ubuntu.com" lxc-create -t download -n Alpine-Stable -- -d alpine -r edge -a amd64
+ echo "No default login, please use Sandbox to configure a new OS from this" >> "/var/lib/lxc/Alpine-Stable/rootfs/etc/issue"
+ echo "nameserver 1.1.1.3" > "/var/lib/lxc/Alpine-Stable/rootfs/etc/resolv.conf"
+ echo "OK ✔️"
+fi;
+
+echo "Increase route cache for ipv6"
+PATTERN=`awk '/net.ipv6.route.max_size = 20000/' "/etc/sysctl.conf"`;
+if [ "${PATTERN}" == "" ]; then
+  echo "net.ipv6.route.max_size = 20000" >> "/etc/sysctl.conf"
+  sysctl -f /etc/sysctl.conf
+fi;
+echo "OK ✔️"
+
+echo -e "[ \e[32mOK\e[39m ] RemoteLabz-worker is installed and ready to serve neat VMs!"
+echo "you have to define the authentication key between all workers for ssh. On each worker, you have to execute the following commands :"
+echo "sudo -u remotelabz-worker ssh-copy-id -i /home/remotelabz-worker/.ssh/id_rsa.pub remotelabz-worker@Worker_X-IP"
+
+echo "On your worker, you have now to follow the instruction https://docs.remotelabz.com/administrators/getting-started/ubuntu-standalone/#add-a-dhcp-service-for-your-laboratory"
+
+if ! [ -f "${REMOTELABZ_WORKER_PATH}/images/alpinelab1.img" ] ; then
+  echo "Download Alpine qemu image"
+  wget -q -P "${REMOTELABZ_WORKER_PATH}"/images https://www.remotelabz.com/wp-content/uploads/alpinelab1.img
+  echo "OK ✔️"
+fi;
+
+#echo "Download Debian 10 qemu image"
+#wget -q http://194.57.105.124/~fnolot/debian10-20190905.img
+#echo "OK ✔️"
+#echo "Download Ubuntu Server 14 with X qemu image"
+#wget -q http://194.57.105.124/~fnolot/Ubuntu-server-14-X.img
+#echo "OK ✔️"
+#echo "Download Ubuntu Server 18 with LXDE qemu image"
+#wget -q http://194.57.105.124/~fnolot/ubuntu-18-SrvLxde.img
+#echo "OK ✔️"
+
+chown remotelabz-worker:www-data /opt/remotelabz-worker/var -R
+chmod g+w /opt/remotelabz-worker/var -R
+
+systemctl enable remotelabz-worker
+systemctl start remotelabz-worker
+echo "Thank you for using our software. ❤️"
+exit 0

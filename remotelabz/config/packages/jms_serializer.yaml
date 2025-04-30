@@ -1,0 +1,22 @@
+jms_serializer:
+    visitors:
+        xml_serialization:
+            format_output: '%kernel.debug%'
+    
+    default_context:
+        serialization:
+            enable_max_depth_checks: true
+            serialize_null: true
+        deserialization:
+            enable_max_depth_checks: false
+
+    property_naming: 
+        id: 'jms_serializer.identical_property_naming_strategy'
+
+    metadata:
+        directories:
+            network-bundle:
+                namespace_prefix: "Remotelabz\\NetworkBundle"
+                path: '%kernel.project_dir%/config/serializer/network-bundle/'
+
+        auto_detection: false

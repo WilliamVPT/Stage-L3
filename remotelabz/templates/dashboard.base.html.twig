@@ -1,0 +1,131 @@
+{% extends 'base.html.twig' %}
+
+{% set breadcrumbs = breadcrumbs | default({}) %}
+
+{% block header %}
+  {% if is_granted('ROLE_GUEST') %}
+  {% include "header_guest.html.twig" %}
+  {% else %}
+  {% include "header.html.twig" %}
+  {% endif %}
+{% endblock %}
+
+{% block body %}
+  <div class="page-body-wrapper">
+    {% block sidebar %}
+    {% if is_granted('ROLE_ADMINISTRATOR') %}
+      {% include "sidebar.admin.html.twig" %}
+    {% elseif is_granted('ROLE_GUEST') %}
+    {% else %}
+        {% include "sidebar.html.twig" %}
+      {% endif %}
+    {% endblock %}
+
+    {% set wrapper_fluid = block('wrapper_fluid') is defined %}
+    {% set wrapper = block('wrapper_xl') is defined %}
+    {% if wrapper_fluid is not empty %}
+      {% set fluid = true %}
+    {% else %}
+      {% set fluid = false %}
+      {% if wrapper is not empty %}
+        {% set xl = true %}
+      {% else %}
+        {% set xl = false %}
+      {% endif %}
+    {% endif %}
+    
+    {% set jumbotron = block('jumbotron') is defined %}
+    
+    <div class="content-wrapper">
+      {% if jumbotron is not empty %}
+      <div class="jumbotron jumbotron-fluid">
+        {{- block('jumbotron') -}}
+      </div>
+      {% endif %}
+      {% if fluid %}
+      <div class="container-fluid">
+      {% elseif xl %}
+      <div class="container-fluid container-limited-xl">
+      {% else %}
+      <div class="container-fluid container-limited">
+      {% endif %}
+        <div class="container-header-wrapper d-flex">
+          <div class="show-sidebar">{{ svg('hamburger', 'image-sm') }}</div>
+          {% block breadcrumbs %}
+            <div class="breadcrumb">
+              {% if '/admin' in app.request.uri %}
+                {% set breadcrumbs = breadcrumbs | merge({ 'Admin Area': path('users') }) %}
+              {% else %}
+                {% set breadcrumbs = breadcrumbs | merge({}) %}
+              {% endif %}
+              {% for breadcrumb, link in breadcrumbs|reverse(true) %}
+                <div class="breadcrumb-item">
+                  {% if link is not null %}
+                    <a href="{{ link }}">{{ breadcrumb }}</a>
+                  {% else %}
+                    <span>{{ breadcrumb }}</span>
+                  {% endif %}
+                  {%- if not loop.last -%}{{ svg('angle-right')}}{%- endif -%}
+                </div>
+              {% endfor %}
+            </div>
+          {% endblock %}
+        </div>
+      </div>
+      {% if fluid %}
+      <div class="container-fluid">
+      {% elseif xl %}
+      <div class="container-fluid container-limited-xl">
+      {% else %}
+      <div class="container-fluid container-limited">
+      {% endif %}
+        <div class="flashbag-container">
+          {%- for label, messages in app.flashes -%}
+            {%- for message in messages -%}
+              <div class="flash-notice alert alert-{{ label }} alert-dismissible fade show">
+                <button aria-label="Close" class="close" data-dismiss="alert" type="dismiss">
+                  <span aria-hidden="true">&times;</span>
+                </button>
+                {{ message }}
+              </div>
+            {%- endfor -%}
+          {%- endfor -%}
+        </div>
+        {% if fluid %}
+          {{- block('wrapper_fluid') -}}
+        {% elseif xl %}
+          {{- block('wrapper_xl') -}}
+        {% else %}
+          {{- block('wrapper') -}}
+        {% endif %}
+        <footer>
+          
+          <div class="d-flex align-items-center justify-content-center">
+            <a href="https://anr.fr" target="_blank"><img src="{{ asset('build/images/logo_investirlavenir_rvb.png') }}" class="partnership-logo w64 h64" /></a>
+            {#<div class="flex-fill">Authors: F. Nolot, J. Hubert &amp; O. Flauzac</div>#}
+            {#<div class="flex-fill"><a href="http://www.dune-eole.fr/" target="_blank">ANR-16-DUNE-0001-EOLE</a></div>#}
+            <div class="flex-fill"><a href="https://docs.remotelabz.com" target="_blank">Help</a></div>
+            <div class="flex-fill"><a href="https://www.remotelabz.com" target="_blank">Web site</a></div>
+            <div class="flex-fill"><a href="mailto:{{ contact_mail }}" target="_blank">Contact</a></div>
+            <div class="flex-fill"><a href="https://github.com/remotelabz/remotelabz/issues/new" target="_blank">Submit an issue</a></div>
+          </div>
+        </footer>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+{% block javascripts %}
+{{parent()}}
+<script>
+function resizebar() {
+  var toggleSidebar = document.querySelector("#toggle-sidebar");
+  var scrollSidebar = document.querySelector("#sidebar-scroll");
+  var sideBarContext = document.querySelector("#sidebarContext");
+  var sideBar = document.querySelector("#sidebar");
+  scrollSidebar.style.maxHeight = sideBar.offsetHeight - toggleSidebar.offsetHeight - sideBarContext.offsetHeight +"px";
+}
+resizebar();
+window.addEventListener("resize", ()=> resizebar());
+
+</script>
+{% endblock %}

@@ -1,0 +1,252 @@
+# This file is the entry point to configure your own services.
+# Files in the packages/ subdirectory configure your dependencies.
+
+# Put parameters here that don't need to change on each machine where the app is deployed
+# https://symfony.com/doc/current/best_practices/configuration.html#application-related-configuration
+parameters:
+    locale: 'en'
+    launch_scripts_directory: '%kernel.project_dir%/public/uploads/launch_scripts'
+    profile_picture_directory: '%kernel.project_dir%/public/uploads/user/avatar'
+    group_image_directory: '%kernel.project_dir%/public/uploads/group/avatar'
+    directory.public: '%kernel.project_dir%/public'
+    directory.public.images: '%directory.public%/build/images'
+    directory.public.upload: '%directory.public%/uploads'
+    directory.public.upload.lab: '%directory.public.upload%/lab'
+    directory.public.upload.lab.banner: '%directory.public.upload.lab%/banner'
+    image_directory: '%kernel.project_dir%/public/uploads/images'
+    image_default_profile: 'Circle-icons-profile.png'
+    no_internet_access: 'No-Internet.png'
+    shibboleth_idp_url: '/Shibboleth.sso'
+    shibboleth_remote_user_var: 'eppn'
+    api_key_cookie_name: 'bearer'
+
+    app.worker_server: '%env(resolve:WORKER_SERVER)%'
+    app.worker_port: '%env(resolve:WORKER_PORT)%'
+
+    #app.websocket_proxy_port: '%env(resolve:WEBSOCKET_PROXY_PORT)%'
+    #app.websocket_proxy_api_port: '%env(resolve:WEBSOCKET_PROXY_API_PORT)%'
+    app.services.proxy.server: '%env(resolve:REMOTELABZ_PROXY_SERVER)%'
+    app.services.proxy.server.api: '%env(resolve:REMOTELABZ_PROXY_SERVER_API)%'
+    app.services.proxy.port: '%env(int:REMOTELABZ_PROXY_PORT)%'
+    app.services.proxy.port.api: '%env(int:REMOTELABZ_PROXY_API_PORT)%'
+    app.services.proxy.https: '%env(bool:REMOTELABZ_PROXY_USE_HTTPS)%'
+    app.services.proxy.wss: '%env(bool:REMOTELABZ_PROXY_USE_WSS)%'
+    app.services.vpn: '%env(resolve:VPN_ADDRESS)%'
+
+    app.enable_jitsi_call: '%env(resolve:ENABLE_JITSI_CALL)%'
+    app.jitsi_call_url: '%env(resolve:JITSI_CALL_URL)%'
+    app.jitsi_call_secret: '%env(resolve:JITSI_CALL_SECRET)%'
+
+    app.general.public_address: '%env(resolve:PUBLIC_ADDRESS)%'
+    app.general.contact_mail: '%env(resolve:CONTACT_MAIL)%'
+    app.general.maintenance: '%env(bool:APP_MAINTENANCE)%'
+    app.general.message: '%env(resolve:GENERAL_MESSAGE)%'
+    app.general.single_srv: '%env(bool:DEPLOY_SINGLE_SERVER)%'
+
+    app.shibboleth.enable: '%env(resolve:ENABLE_SHIBBOLETH)%'
+
+    app.network.base_network: '%env(resolve:BASE_NETWORK)%'
+    app.network.base_network_netmask: '%env(resolve:BASE_NETWORK_NETMASK)%'
+    app.network.lab_network_netmask: '%env(resolve:LAB_NETWORK_NETMASK)%'
+
+    app.user.url_check_internet: '%env(resolve:URL_TO_CHECK_INTERNET)%'
+    app.user.authorized_affiliation: '%env(resolve:AUTHORIZED_SHIBBOLETH_DOMAIN)%'
+
+
+    app.ssl.ca.cert: '%env(resolve:SSL_CA_CERT)%'
+    app.ssl.ca.key: '%env(resolve:SSL_CA_KEY)%'
+    app.ssl.ca.key.passphrase: '%env(resolve:SSL_CA_KEY_PASSPHRASE)%'
+    app.ssl.tls.key: '%env(resolve:SSL_TLS_KEY)%'
+    app.ssl.certs.dir: '%env(resolve:SSL_CERTS_DIR)%'
+    app.ssl.certs.validity: '%env(resolve:SSL_CERTS_VALIDITY_DAYS)%'
+    app.ssl.dn.cn: '%env(resolve:SSL_DN_CN)%'
+    app.ssl.dn.country: '%env(resolve:SSL_DN_COUNTRY)%'
+    app.ssl.dn.province: '%env(resolve:SSL_DN_PROVINCE)%'
+    app.ssl.dn.city: '%env(resolve:SSL_DN_CITY)%'
+    app.ssl.dn.org: '%env(resolve:SSL_DN_ORG)%'
+    app.ssl.dn.email: '%env(resolve:SSL_DN_EMAIL)%'
+
+    app.ssh.worker.user : '%env(string:SSH_USER_WORKER)%'
+    app.ssh.worker.passwd : '%env(string:SSH_USER_PASSWD)%'
+    app.ssh.worker.privatekey : '%env(string:SSH_USER_PRIVATEKEY_FILE)%'
+    app.ssh.worker.publickey : '%env(string:SSH_USER_PUBLICKEY_FILE)%'
+
+services:
+    # default configuration for services in *this* file
+    _defaults:
+        autowire: true      # Automatically injects dependencies in your services.
+        autoconfigure: true # Automatically registers your services as commands, event subscribers, etc.
+
+    cancel_renameos_function:
+        class:      App\Controller\OperatingSystemController
+        arguments:  []
+    # makes classes in src/ available to be used as services
+    # this creates a service per class whose id is the fully-qualified class name
+    App\:
+        resource: '../src/'
+        exclude:
+            - '../src/DependencyInjection/'
+            - '../src/Entity/'
+            - '../src/Kernel.php'
+            - '../src/Tests/'
+            
+    Psr\Log\LoggerInterface: '@monolog.logger'
+
+    # controllers are imported separately to make sure services can be injected
+    # as action arguments even if you don't extend any base controller class
+    App\Controller\:
+        resource: '../src/Controller/'
+        tags: ['controller.service_arguments']
+
+    # add more service definitions when explicit configuration is needed
+    # please note that last definitions always *replace* previous ones
+    App\EventListener\LaunchScriptUploadListener:
+        tags:
+            - { name: doctrine.event_listener, event: prePersist }
+            - { name: doctrine.event_listener, event: preUpdate }
+            - { name: doctrine.event_listener, event: postLoad }
+
+    App\EventListener\ExceptionListener:
+        tags:
+            - { name: kernel.event_listener, event: kernel.exception }
+        arguments: ['%kernel.environment%']
+
+    App\Service\FileUploader:
+        arguments:
+            $targetDirectory: '%launch_scripts_directory%'
+
+    App\Service\Lab\LabImporter:
+        arguments:
+            $rootDirectory: '%kernel.project_dir%'
+            $publicImageDirectory: '%directory.public.images%'
+            $bannerDirectory: '%directory.public.upload.lab.banner%'
+
+    App\Service\ImageFileUploader:
+        arguments:
+            $targetDirectory: '%image_directory%'
+
+    App\Service\GroupPictureFileUploader:
+        arguments:
+            $targetDirectory: '%group_image_directory%'
+
+    App\Service\LabBannerFileUploader:
+        arguments:
+            $targetDirectory: '%directory.public.upload.lab.banner%'
+
+    App\Service\ProfilePictureFileUploader:
+        arguments:
+           - '%profile_picture_directory%'
+           - '@security.token_storage'
+
+    App\Security\LoginFormAuthenticator:
+        arguments:
+            $refreshTokenManager: '@gesdinet.jwtrefreshtoken.refresh_token_manager'
+            $maintenance: '%env(bool:APP_MAINTENANCE)%'
+
+    App\Security\ShibbolethAuthenticator:
+        arguments:
+            $authorized_affiliation: '%app.user.authorized_affiliation%'
+            $idpUrl: null
+            $remoteUserVar: null
+
+    App\EventSubscriber\RenderExceptionSubscriber:
+        arguments:
+            $logger: '@logger'
+
+    App\EventListener\InstanceSerializationListener:
+        tags:
+            - { name: jms_serializer.event_subscriber }
+    
+    GuzzleHttp\Client: ~
+
+    GuzzleHttp\ClientInterface: '@GuzzleHttp\Client'
+
+    App\EventSubscriber\LogoutEventSubscriber:
+        arguments:
+            - "%api_key_cookie_name%"
+    
+    openvpn_configuration_generator:
+        class: App\Service\VPN\OpenVPNConfigurationGenerator
+        public: true
+        arguments:
+            $commonName: '%app.ssl.dn.cn%'
+            $country: '%app.ssl.dn.country%'
+            $province: '%app.ssl.dn.province%'
+            $city: '%app.ssl.dn.city%'
+            $organization: '%app.ssl.dn.org%'
+            $email: '%app.ssl.dn.email%'
+            $CACert: '%app.ssl.ca.cert%'
+            $CAKey: '%app.ssl.ca.key%'
+            $CAKeyPassphrase: '%app.ssl.ca.key.passphrase%'
+            $TLSKey: '%app.ssl.tls.key%'
+            $exportPath: '%app.ssl.certs.dir%'
+            $validity: '%app.ssl.certs.validity%'
+            $vpn_address: '%app.services.vpn%'
+    
+    App\Service\VPN\VPNConfiguratorGeneratorInterface: '@openvpn_configuration_generator'
+
+    App\Service\Network\NetworkManager:
+        arguments:
+            $baseNetwork: '%app.network.base_network%'
+            $baseNetworkNetmask: '%app.network.base_network_netmask%'
+            $labNetworkNetmask: '%app.network.lab_network_netmask%'
+    
+    App\Service\Instance\InstanceManager:
+        arguments:
+            $workerServer: '%app.worker_server%'
+            $workerPort: '%app.worker_port%'
+            $rootDirectory: '%kernel.project_dir%'
+            $singleServer: '%app.general.single_srv%'
+
+    App\Service\Worker\WorkerManager:
+        arguments:
+            $workerServer: '%app.worker_server%'
+            $workerPort: '%app.worker_port%'
+            $publicAddress: '%app.general.public_address%'
+
+    App\Service\Lab\BannerManager:
+        arguments:
+            $bannerDirectory: '%directory.public.upload.lab.banner%'
+
+    App\Controller\SecurityController:
+        arguments:
+            $maintenance: '%app.general.maintenance%'
+            $general_message: '%app.general.message%'
+            $contact_mail: '%app.general.contact_mail%'
+
+    App\Service\Proxy\ProxyManager:
+        arguments:
+            $workerServer: '%app.worker_server%'
+            $remotelabzProxyServer: '%app.services.proxy.server%'
+            $remotelabzProxyServerAPI: '%app.services.proxy.server.api%'
+            $remotelabzProxyPort: '%app.services.proxy.port%'
+            $remotelabzProxyApiPort: '%app.services.proxy.port.api%'
+            $remotelabzProxyUseHttps: '%app.services.proxy.https%'
+            $remotelabzProxyUseWss: '%app.services.proxy.wss%'
+
+    App\Controller\ServiceController:
+        arguments:
+            $workerServer: '%app.worker_server%'
+            $workerPort: '%app.worker_port%'
+            $remotelabzProxyApiPort: '%app.services.proxy.port.api%'
+            $remotelabzProxyServerAPI: '%app.services.proxy.server.api%'
+
+    App\Controller\UserController:
+        arguments:
+            $url_check_internet: '%app.user.url_check_internet%'
+            $remotevpn_addr: '%app.general.public_address%'
+            $contact_mail: '%app.general.contact_mail%'
+
+    App\Controller\InstanceController:
+        arguments:
+            $remotelabzProxyUseWss: '%app.services.proxy.wss%'
+
+    App\MessageHandler\InstanceStateMessageHandler:
+        arguments:
+            $rootDirectory: '%kernel.project_dir%'
+
+    instance_manager: '@App\Service\Instance\InstanceManager'
+    network_manager: '@App\Service\Network\NetworkManager'
+    proxy_manager: '@App\Service\Proxy\ProxyManager'
+
+    
