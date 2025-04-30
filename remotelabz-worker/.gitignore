@@ -1,0 +1,23 @@
+
+###> symfony/framework-bundle ###
+/.env.local
+/.env.local.php
+/.env.*.local
+/public/bundles/
+/var/
+/vendor/
+/cache/
+/log/
+###< symfony/framework-bundle ###
+
+/.vagrant/
+/*.log
+/*.out
+/.vscode/
+/images/
+/instances/
+composer.lock
+symfony.lock
+config/certs/*
+.env.local.bak
+config/packages/messenger.yaml

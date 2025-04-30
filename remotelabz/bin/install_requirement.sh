@@ -183,8 +183,8 @@ if ! docker compose version &>/dev/null; then
 fi
 
 # Créer le dossier de travail
-mkdir -p librenms-docker
-cd librenms-docker || exit 1
+mkdir -p ~/librenms-docker
+cd ~/librenms-docker || exit 1
 
 # Créer le fichier .env
 cat > .env <<EOF

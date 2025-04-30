@@ -1,0 +1,59 @@
+###> symfony/framework-bundle ###
+/.env.local
+/.env.local.php
+/.env.*.local
+/config/secrets/prod/prod.decrypt.private.php
+/public/bundles/
+/var/
+/vendor/
+###< symfony/framework-bundle ###
+
+###> symfony/phpunit-bridge ###
+.phpunit
+.phpunit.result.cache
+/phpunit.xml
+###< symfony/phpunit-bridge ###
+# Visual Studio config
+/.vscode/
+*.code-workspace
+/.idea/**
+
+###> lexik/jwt-authentication-bundle ###
+/config/jwt/*.pem
+!/config/jwt/private-test.pem
+!/config/jwt/public-test.pem
+###< lexik/jwt-authentication-bundle ###
+
+###> symfony/webpack-encore-bundle ###
+/node_modules/
+/public/build/
+npm-debug.log
+yarn-error.log
+###< symfony/webpack-encore-bundle ###
+
+/remotelabz
+*.out
+*.log
+/.vagrant/
+/worker/
+*.crt
+*.key
+.env.prod
+/images/
+vagrant/provision_prod.sh
+###> friendsofphp/php-cs-fixer ###
+/.php_cs
+/.php_cs.cache
+###< friendsofphp/php-cs-fixer ###
+
+/database/
+
+###> phpunit/phpunit ###
+/phpunit.xml
+.phpunit.result.cache
+###< phpunit/phpunit ###
+
+/config/templates/
+/backups/
+/composer.lock
+/config/packages/messenger.yaml
