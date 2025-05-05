@@ -144,13 +144,17 @@ echo "fs.inotify.max_user_watches=16384" >> /etc/sysctl.conf
 echo "fs.inotify.max_user_instances=512" >> /etc/sysctl.conf
 
 echo "=== Installation de Docker ==="
-# Installer Docker
+
+# Installer Docker et outils nécessaires
 apt-get update
 apt-get install -y \
     ca-certificates \
     curl \
     gnupg \
-    lsb-release
+    lsb-release \
+    unzip \
+    wget \
+    sed
 
 # Ajouter la clé GPG officielle de Docker
 install -m 0755 -d /etc/apt/keyrings
@@ -160,8 +164,7 @@ chmod a+r /etc/apt/keyrings/docker.gpg
 
 # Ajouter le dépôt Docker
 echo \
-  "deb [arch=$(dpkg --print-architecture) \
-  signed-by=/etc/apt/keyrings/docker.gpg] \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
   https://download.docker.com/linux/$(. /etc/os-release && echo "$ID") \
   $(lsb_release -cs) stable" | \
   tee /etc/apt/sources.list.d/docker.list > /dev/null
@@ -182,74 +185,23 @@ if ! docker compose version &>/dev/null; then
   exit 1
 fi
 
-# Créer le dossier de travail
-mkdir -p ~/librenms-docker
-cd ~/librenms-docker || exit 1
+# Télécharger l'exemple officiel de LibreNMS Docker Compose
+mkdir -p ~/librenms
+cd ~/librenms || exit 1
 
-# Créer le fichier .env
-cat > .env <<EOF
-TZ=Europe/Paris
-LIBRENMS_PORT=8003
-MYSQL_ROOT_PASSWORD=librenms_root
-MYSQL_PASSWORD=librenms_db_pass
-MYSQL_DATABASE=librenms
-MYSQL_USER=librenms
-EOF
+wget https://github.com/librenms/docker/archive/refs/heads/master.zip
+unzip master.zip
+cd docker-master/examples/compose || exit 1
 
-# Créer le fichier docker-compose.yml
-cat > docker-compose.yml <<EOF
-version: '3.5'
+# Modifier le port de librenms de 8000 à 8003 dans compose.yml
+sed -i 's/published: 8000/published: 8003/' compose.yml
 
-services:
-  db:
-    image: mariadb:10.5
-    container_name: librenms_db
-    environment:
-      MYSQL_ROOT_PASSWORD: \${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: \${MYSQL_DATABASE}
-      MYSQL_USER: \${MYSQL_USER}
-      MYSQL_PASSWORD: \${MYSQL_PASSWORD}
-    volumes:
-      - db_data:/var/lib/mysql
-    restart: unless-stopped
-
-  librenms:
-    image: librenms/librenms:latest
-    container_name: librenms
-    ports:
-      - "\${LIBRENMS_PORT}:8000"
-    environment:
-      DB_HOST: db
-      DB_NAME: \${MYSQL_DATABASE}
-      DB_USER: \${MYSQL_USER}
-      DB_PASSWORD: \${MYSQL_PASSWORD}
-      TZ: \${TZ}
-    volumes:
-      - librenms_data:/data
-    depends_on:
-      - db
-    restart: unless-stopped
-
-  syslog-ng:
-    image: librenms/librenms:latest
-    container_name: librenms_syslog
-    command: /usr/sbin/syslog-ng -F -p /var/run/syslog-ng.pid
-    volumes:
-      - librenms_data:/data
-    depends_on:
-      - librenms
-    restart: unless-stopped
-
-volumes:
-  db_data:
-  librenms_data:
-EOF
-
-# Démarrer les conteneurs en arrière-plan
-docker compose up -d
+# Lancer les conteneurs
+sudo docker compose -f compose.yml up -d
 
 echo "=== Installation terminée ==="
 echo "Accédez à LibreNMS via : http://localhost:8003"
+
 echo "🔥 The root password for your MySQL database is set to RemoteLabz-2022$"
 echo "🔥 The user password for the remotelabz MySQL database is set to Mysql-Pa33wrd$"
 echo "Your .env.local will be configured with this default password. If you choose to change it, don't forget to modify your .env.local file"
