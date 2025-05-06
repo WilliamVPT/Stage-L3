@@ -200,4 +200,21 @@ class IPTables extends Bridge
         }
     }
 
+   public static function getLocalIPAddress(): string
+   {
+       $process = new Process(['hostname', '-I']);
+       $process->run();
+
+       if (!$process->isSuccessful()) {
+           throw new ProcessFailedException($process);
+       }
+
+       // hostname -I peut retourner plusieurs adresses séparées par des espaces
+       $output = trim($process->getOutput());
+       $ips = explode(' ', $output);
+
+       return $ips[0]; // généralement l'adresse IP principale
+   }
+
+
 }

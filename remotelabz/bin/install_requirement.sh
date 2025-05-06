@@ -125,7 +125,101 @@ mute 20
 explicit-exit-notify 1
 duplicate-cn
 push "route 10.11.0.0 255.255.0.0"
+script-security 2
+client-connect /etc/openvpn/scripts/client-connect.sh
+client-disconnect /etc/openvpn/scripts/client-disconnect.sh
 EOF
+
+mkdir /etc/openvpn/scripts
+
+cat > /etc/openvpn/scripts/add-client.sh << EOF
+#!/bin/bash
+
+CLIENT_NAME="$1"
+MAPPING_FILE="/etc/openvpn/client-mappings.json"
+BASE_SUBNET="10.11.0.0"
+NETMASK_BITS=26
+TOTAL_ADDRESSES=64
+
+if [ -z "$CLIENT_NAME" ]; then
+    echo "Usage: $0 <client_name>"
+    exit 1
+fi
+
+mkdir -p "$(dirname "$MAPPING_FILE")"
+touch "$MAPPING_FILE"
+[ ! -s "$MAPPING_FILE" ] && echo "{}" > "$MAPPING_FILE"
+
+last_ip=$(jq -r '.[].subnet' "$MAPPING_FILE" | tail -n 1)
+if [ -z "$last_ip" ]; then
+    next_ip="$BASE_SUBNET"
+else
+    IFS=. read -r o1 o2 o3 o4 <<< "${last_ip%%/*}"
+    total_ip=$(( (o1 << 24) + (o2 << 16) + (o3 << 8) + o4 + TOTAL_ADDRESSES ))
+    next_ip="$(( (total_ip >> 24) & 255 )).$(( (total_ip >> 16) & 255 )).$(( (total_ip >> 8) & 255 )).$(( total_ip & 255 ))"
+fi
+
+jq --arg client "$CLIENT_NAME" --arg subnet "$next_ip/$NETMASK_BITS" '. + {($client): { "subnet": $subnet }}' "$MAPPING_FILE" > "$MAPPING_FILE.tmp" && mv "$MAPPING_FILE.tmp" "$MAPPING_FILE"
+
+echo "✅ Client '$CLIENT_NAME' ajouté avec le sous-réseau $next_ip/$NETMASK_BITS"
+EOF
+
+cat > /etc/openvpn/scripts/client-connect.sh << EOF
+#!/bin/bash
+
+CLIENT_NAME="$common_name"
+MAPPING_FILE="/etc/openvpn/client-mappings.json"
+
+if [ -z "$CLIENT_NAME" ]; then
+    echo "Erreur : common_name non défini"
+    exit 1
+fi
+
+SUBNET=$(jq -r --arg client "$CLIENT_NAME" '.[$client].subnet' "$MAPPING_FILE")
+
+if [ "$SUBNET" == "null" ] || [ -z "$SUBNET" ]; then
+    echo "Ajout automatique du client $CLIENT_NAME"
+    /etc/openvpn/scripts/add-client.sh "$CLIENT_NAME"
+    SUBNET=$(jq -r --arg client "$CLIENT_NAME" '.[$client].subnet' "$MAPPING_FILE")
+fi
+
+# Appliquer la règle iptables
+iptables -A FORWARD -s "$ifconfig_pool_remote_ip" ! -d "$SUBNET" -j DROP
+echo "🔒 Règle iptables appliquée pour $CLIENT_NAME : FORWARD -s $ifconfig_pool_remote_ip ! -d $SUBNET -j DROP"
+EOF
+
+cat > /etc/openvpn/scripts/client-disconnect.sh << EOF
+#!/bin/bash
+
+CLIENT_NAME="$common_name"
+MAPPING_FILE="/etc/openvpn/client-mappings.json"
+
+SUBNET=$(jq -r --arg client "$CLIENT_NAME" '.[$client].subnet' "$MAPPING_FILE")
+iptables -D FORWARD -s "$ifconfig_pool_remote_ip" ! -d "$SUBNET" -j DROP
+echo "♻️ Règle iptables supprimée pour $CLIENT_NAME"
+EOF
+
+cat > /etc/openvpn/scripts/list-client.sh << EOF
+#!/bin/bash
+
+MAPPING_FILE="/etc/openvpn/client-mappings.json"
+
+if [ ! -f "$MAPPING_FILE" ]; then
+    echo "Aucun mapping trouvé. Fichier introuvable : $MAPPING_FILE"
+    exit 1
+fi
+
+echo "Liste des clients VPN et leurs sous-réseaux alloués :"
+echo "------------------------------------------------------"
+
+jq -r 'to_entries[] | "\(.key): \(.value)"' "$MAPPING_FILE"
+EOF
+
+apt install jq
+chmod +x /etc/openvpn/scripts/*.sh
+touch /etc/openvpn/client-mappings.json
+chmod 600 /etc/openvpn/client-mappings.json
+
 
 chown :www-data /etc/openvpn/client
 chmod g+w /etc/openvpn/client
